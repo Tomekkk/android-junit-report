@@ -35,6 +35,9 @@ import android.content.Context;
 import android.util.Log;
 import android.util.Xml;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Custom test listener that outputs test results to XML files. The files
  * use a similar format to the Ant JUnit task XML formatter, with a few of
@@ -108,6 +111,41 @@ public class JUnitReportListener implements TestListener {
     private boolean mTimeAlreadyWritten = false;
     private long mTestStartTime;
 
+   /**
+     * Stores information about single test run.
+     * 
+     */
+    public static class TestInfo {
+        public Package thePackage;
+        public Class< ? extends TestCase> testCase;
+        public String name;
+        public Throwable error;
+        public AssertionFailedError failure;
+        public long time;
+
+        @Override
+        public String toString() {
+            return name + "[" + testCase.getClass() + "] <" + thePackage + ">. Time: " + time + " ms. E<" + error
+                    + ">, F <" + failure + ">";
+        }
+    }
+
+    /**
+     * Stores information about particular test case class - containing all
+     * tests for that class.
+     * 
+     */
+    public static class TestCaseInfo {
+        public Package thePackage;
+        public Class< ? extends TestCase> testCaseClass;
+        public Map<String, TestInfo> testMap = new LinkedHashMap<String, TestInfo>();
+    }
+
+    private TestInfo mCurrentTestInfo;
+    private TestCaseInfo mCurrentTestCaseInfo;
+
+
+
     /**
      * Creates a new listener.
      *
@@ -141,9 +179,24 @@ public class JUnitReportListener implements TestListener {
             if (test instanceof TestCase) {
                 TestCase testCase = (TestCase) test;
                 checkForNewSuite(testCase);
+/*                
                 mSerializer.startTag("", TAG_CASE);
                 mSerializer.attribute("", ATTRIBUTE_CLASS, mCurrentSuite);
                 mSerializer.attribute("", ATTRIBUTE_NAME, testCase.getName());
+*/
+                mCurrentTestInfo = new TestInfo();
+                final Class< ? extends TestCase> clazz = testCase.getClass();
+                final Package thePackage = clazz.getPackage();
+                final String name = testCase.getName();
+                StringBuilder sb = new StringBuilder();
+                sb.append(thePackage).append(".").append(clazz.getSimpleName()).append(".").append(name);
+                final String mapKey = sb.toString();
+
+
+                mCurrentTestInfo.name = name;
+                mCurrentTestInfo.testCase = testCase.getClass();
+                mCurrentTestInfo.thePackage = thePackage;
+                mCurrentTestCaseInfo.testMap.put(mapKey, mCurrentTestInfo);
 
                 mTimeAlreadyWritten = false;
                 mTestStartTime = System.currentTimeMillis();
@@ -160,20 +213,32 @@ public class JUnitReportListener implements TestListener {
                 if (mMultiFile) {
                     close();
                 } else {
+                    //TODO add single file support
                     mSerializer.endTag("", TAG_SUITE);
                     mSerializer.flush();
                 }
             }
 
-            openIfRequired(suiteName);
+            openIfRequired(testCase);
 
-            mSerializer.startTag("", TAG_SUITE);
-            mSerializer.attribute("", ATTRIBUTE_NAME, suiteName);
+            mCurrentTestCaseInfo.testCaseClass = testCase.getClass();  
             mCurrentSuite = suiteName;
         }
     }
 
-    private void openIfRequired(String suiteName) {
+    private void openIfRequired(TestCase testCase) {
+
+        if(mCurrentTestCaseInfo == null) {
+            mCurrentTestCaseInfo = new TestCaseInfo();
+            mCurrentTestCaseInfo.testCaseClass = testCase.getClass();
+            final Class< ? extends TestCase> clazz = testCase.getClass();
+            final Package thePackage = clazz.getPackage();
+            final String name = testCase.getName();
+            StringBuilder sb = new StringBuilder();
+            sb.append(thePackage).append(".").append(clazz.getSimpleName()).append(".").append(name);            
+            mCurrentTestCaseInfo.thePackage = thePackage;
+        }
+/*
         try {
             if (mSerializer == null) {
                 mOutputStream = openOutputStream(resolveFileName(suiteName));
@@ -188,6 +253,7 @@ public class JUnitReportListener implements TestListener {
             Log.e(LOG_TAG, safeMessage(e));
             throw new RuntimeException("Unable to open serializer: " + e.getMessage(), e);
         }
+*/
     }
 
     private String resolveFileName(String suiteName) {
@@ -237,18 +303,26 @@ public class JUnitReportListener implements TestListener {
 
     @Override
     public void addError(Test test, Throwable error) {
-        addProblem(TAG_ERROR, error);
+        //addProblem(TAG_ERROR, error);
+
+        recordTestTime();
+        mCurrentTestInfo.error = error;
     }
 
     @Override
     public void addFailure(Test test, AssertionFailedError error) {
-        addProblem(TAG_FAILURE, error);
+        //addProblem(TAG_FAILURE, error);
+
+        recordTestTime();
+        mCurrentTestInfo.failure = error;
     }
 
     private void addProblem(String tag, Throwable error) {
-        try {
+        // try {
             recordTestTime();
 
+
+/*
             mSerializer.startTag("", tag);
             mSerializer.attribute("", ATTRIBUTE_MESSAGE, safeMessage(error));
             mSerializer.attribute("", ATTRIBUTE_TYPE, error.getClass().getName());
@@ -257,30 +331,33 @@ public class JUnitReportListener implements TestListener {
             mSerializer.text(w.toString());
             mSerializer.endTag("", tag);
             mSerializer.flush();
-        } catch (IOException e) {
-            Log.e(LOG_TAG, safeMessage(e));
-        }
+*/            
+        // } catch (IOException e) {
+        //     Log.e(LOG_TAG, safeMessage(e));
+        // }
     }
 
-    private void recordTestTime() throws IOException {
+    private void recordTestTime() {
         if (!mTimeAlreadyWritten) {
             mTimeAlreadyWritten = true;
-            mSerializer.attribute("", ATTRIBUTE_TIME, String.format(Locale.ENGLISH, "%.3f",
-                    (System.currentTimeMillis() - mTestStartTime) / 1000.));
+//            mSerializer.attribute("", ATTRIBUTE_TIME, String.format(Locale.ENGLISH, "%.3f",
+//                    (System.currentTimeMillis() - mTestStartTime) / 1000.));
+
+            mCurrentTestInfo.time = (System.currentTimeMillis() - mTestStartTime);
         }
     }
 
     @Override
     public void endTest(Test test) {
-        try {
+        // try {
             if (test instanceof TestCase) {
                 recordTestTime();
-                mSerializer.endTag("", TAG_CASE);
-                mSerializer.flush();
+                // mSerializer.endTag("", TAG_CASE);
+                // mSerializer.flush();
             }
-        } catch (IOException e) {
-            Log.e(LOG_TAG, safeMessage(e));
-        }
+        // } catch (IOException e) {
+        //     Log.e(LOG_TAG, safeMessage(e));
+        // }
     }
 
     /**
@@ -288,27 +365,107 @@ public class JUnitReportListener implements TestListener {
      * when the listener is finished with.
      */
     public void close() {
-        if (mSerializer != null) {
+        
             try {
-                // Do this just in case endTest() was not called due to a crash in native code.
-                if (TAG_CASE.equals(mSerializer.getName())) {
-                    mSerializer.endTag("", TAG_CASE);
+                
+
+                int allTests = mCurrentTestCaseInfo.testMap.size();
+                int failedTests = 0;
+                int errorTests = 0;
+                int successTests = 0;
+                int totalTime = 0;
+
+                for (Map.Entry<String, TestInfo> entry : mCurrentTestCaseInfo.testMap.entrySet()) {
+                    String key = entry.getKey();
+                    TestInfo testInfo = entry.getValue();
+
+                    if(testInfo.error != null)
+                        errorTests++;
+                    if(testInfo.failure != null)
+                        failedTests++;
+                    totalTime += testInfo.time;
                 }
 
-                if (mCurrentSuite != null) {
-                    mSerializer.endTag("", TAG_SUITE);
+                if (mSerializer == null) {
+                    mOutputStream = openOutputStream(resolveFileName(mCurrentSuite));
+                    mSerializer = Xml.newSerializer();
+                    mSerializer.setOutput(mOutputStream, ENCODING_UTF_8);
+                    mSerializer.startDocument(ENCODING_UTF_8, true);
+                     if (!mMultiFile) {
+                         mSerializer.startTag("", TAG_SUITES);
+                     }
                 }
+                mSerializer.startTag("", TAG_SUITE);
+                mSerializer.attribute("", ATTRIBUTE_NAME, mCurrentSuite);
+                mSerializer.attribute("", "errors", Integer.toString(errorTests));
+                mSerializer.attribute("", "failures", Integer.toString(failedTests));
+                mSerializer.attribute("", "tests", Integer.toString(allTests));
+                mSerializer.attribute("", "time",  String.format(Locale.ENGLISH, "%.3f", (totalTime/ 1000.)));
+
+
+
+                for (Map.Entry<String, TestInfo> entry : mCurrentTestCaseInfo.testMap.entrySet()) {
+                    String key = entry.getKey();
+                    TestInfo testInfo = entry.getValue();
+
+
+                    mSerializer.startTag("", TAG_CASE);
+                    mSerializer.attribute("", ATTRIBUTE_CLASS, mCurrentSuite);
+                    mSerializer.attribute("", ATTRIBUTE_NAME, testInfo.testCase.getName());
+                    mSerializer.attribute("", ATTRIBUTE_TIME, String.format(Locale.ENGLISH, "%.3f", (testInfo.time/ 1000.)));
+
+
+                    if(testInfo.error != null) {
+                        mSerializer.startTag("", TAG_ERROR);
+                        mSerializer.attribute("", ATTRIBUTE_MESSAGE, safeMessage(testInfo.error));
+                        mSerializer.attribute("", ATTRIBUTE_TYPE, testInfo.error.getClass().getName());
+                        StringWriter w = new StringWriter();
+                        testInfo.error.printStackTrace(mFilterTraces ? new FilteringWriter(w) : new PrintWriter(w));
+                        mSerializer.text(w.toString());
+                        mSerializer.endTag("", TAG_ERROR);
+                        mSerializer.flush();
+                    }
+
+                    if(testInfo.failure != null) {
+                        mSerializer.startTag("", TAG_FAILURE);
+                        mSerializer.attribute("", ATTRIBUTE_MESSAGE, safeMessage(testInfo.failure));
+                        mSerializer.attribute("", ATTRIBUTE_TYPE, testInfo.failure.getClass().getName());
+                        StringWriter w = new StringWriter();
+                        testInfo.failure.printStackTrace(mFilterTraces ? new FilteringWriter(w) : new PrintWriter(w));
+                        mSerializer.text(w.toString());
+                        mSerializer.endTag("", TAG_FAILURE);
+                        mSerializer.flush();                        
+                    } 
+
+
+                    mSerializer.endTag("", TAG_CASE);
+                    mSerializer.flush();
+                }
+
+
+                // Do this just in case endTest() was not called due to a crash in native code.
+                // if (TAG_CASE.equals(mSerializer.getName())) {
+                //     mSerializer.endTag("", TAG_CASE);
+                // }
+
+                //if (mCurrentSuite != null) {
+                    mSerializer.endTag("", TAG_SUITE);
+                //}
 
                 if (!mMultiFile) {
                     mSerializer.endTag("", TAG_SUITES);
                 }
+
+                mCurrentTestInfo = null;
+                mCurrentTestCaseInfo = null;
+
                 mSerializer.endDocument();
                 mSerializer.flush();
                 mSerializer = null;
             } catch (IOException e) {
                 Log.e(LOG_TAG, safeMessage(e));
             }
-        }
+        
 
         if (mOutputStream != null) {
             try {
@@ -318,6 +475,8 @@ public class JUnitReportListener implements TestListener {
                 Log.e(LOG_TAG, safeMessage(e));
             }
         }
+
+
     }
 
     private String safeMessage(Throwable error) {
